@@ -1190,12 +1190,12 @@ write_vips( Write *write,
 		image = malloc_png_bytep(mode_in, in->Xsize, in->Ysize);
 		bytepp_to_bytep(mode_in, in->Xsize, in->Ysize, image, row_pointer_in);
 		free(row_pointer_in);
+		
 		error = lodepng_auto_choose_color(mode_out, (unsigned char*)image, in->Xsize, in->Ysize, mode_in);
 		if(error) return error;
 			
 		if((mode_out->colortype == LCT_RGB || mode_out->colortype == LCT_RGBA) && mode_out->bitdepth == 8)
 		{
-			printf("mode_out is rgb or rgba\n");
 			lodepng_color_mode_cleanup(mode_out);
 			color_mode_init(mode_out, LCT_PALETTE, 8);
 			row_pointer_out = malloc_png_bytepp(mode_out, in->Xsize, in->Ysize);
