@@ -118,6 +118,7 @@
 
 #include <png.h>
 #include "lodepng.h"
+#include "libimagequant.h"
 
 #if PNG_LIBPNG_VER < 10003
 #error "PNG library too old."
@@ -215,6 +216,62 @@ static void free_png_bytepp(int height, png_bytepp row_pointer)
 		}
 		free(row_pointer);
 	}
+}
+
+void rgb_to_rgba_callback(liq_color row_out[], int row_index, int width, void *user_info) 
+{
+	int i;
+    unsigned char *rgb_row = ((unsigned char *)user_info) + 3*width*row_index;
+
+    for(i=0; i < width; i++) 
+	{
+        row_out[i].r = rgb_row[i*3];
+        row_out[i].g = rgb_row[i*3+1];
+        row_out[i].b = rgb_row[i*3+2];
+        row_out[i].a = 255;
+    }
+}
+
+int auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
+{
+	int i;
+	liq_result *quantization_result;
+	unsigned char *raw_8bit_pixels;
+	const liq_palette *palette;
+	size_t pixels_size = width * height;
+	liq_attr *handle = liq_attr_create();
+	liq_image *input_image;
+	if(mode_in->colortype == LCT_RGB)
+	{
+		input_image = liq_image_create_custom(handle, rgb_to_rgba_callback, in, width, height, 0);
+	}
+	else
+	{
+		input_image = liq_image_create_rgba(handle, in, width, height, 0);
+	}
+
+    // You could set more options here, like liq_set_quality
+
+    if (liq_image_quantize(input_image, handle, &quantization_result) != LIQ_OK) 
+	{
+        fprintf(stderr, "Quantization failed\n");
+        return 1;
+    }
+
+
+    raw_8bit_pixels = (unsigned char *)malloc(pixels_size);
+    liq_set_dithering_level(quantization_result, 1.0);
+	liq_write_remapped_image(quantization_result, input_image, raw_8bit_pixels, pixels_size);
+    palette = liq_get_palette(quantization_result);
+
+	for(i=0; i < palette->count; i++) 
+	{
+		lodepng_palette_add(mode_out, palette->entries[i].r, palette->entries[i].g, palette->entries[i].r, palette->entries[i].a);
+    }
+
+	bytep_to_bytepp(mode_out,width,height,raw_8bit_pixels,row_pointer_out);
+
+	return 0;
 }
 
 static void auto_convert_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
@@ -1131,8 +1188,16 @@ write_vips( Write *write,
 		{
 			row_pointer_out = malloc_png_bytepp(mode_out, in->Xsize, in->Ysize);
 			auto_convert_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
-			auto_converted = TRUE;
 		}
+		else
+		{
+			lodepng_color_mode_cleanup(mode_out);
+			mode_out->bitdepth = 8;
+			mode_out->colortype = LCT_PALETTE;
+			row_pointer_out = malloc_png_bytepp(mode_out, in->Xsize, in->Ysize);
+			auto_convert_platte_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
+		}
+		auto_converted = TRUE;
 		
 		//free mode_in and image
 		lodepng_color_mode_cleanup(mode_in);

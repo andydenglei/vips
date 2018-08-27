@@ -37,6 +37,18 @@ libforeign_la_SOURCES = \
 	vipspng.c \
 	lodepng.h \
 	lodepng.c \
+	kmeans.h \
+	kmeans.c \
+	mediancut.h \
+	mediancut.c \
+	mempool.h \
+	mempool.c \
+	nearest.h \
+	nearest.c \
+	pam.h \
+	pam.c \
+	libimagequant.h \
+	libimagequant.c \
 	openexr2vips.c \
 	openexrload.c \
 	fits.c \
