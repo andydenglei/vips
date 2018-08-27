@@ -220,10 +220,10 @@ static void free_png_bytepp(int height, png_bytepp row_pointer)
 
 void rgb_to_rgba_callback(liq_color row_out[], int row_index, int width, void *user_info) 
 {
-   int i;
-   unsigned char *rgb_row = ((unsigned char *)user_info) + 3 * width * row_index;
+	int i;
+	unsigned char *rgb_row = ((unsigned char *)user_info) + 3 * width * row_index;
 
-   for(i = 0; i < width; i++) 
+	for(i = 0; i < width; i++) 
 	{
 		row_out[i].r = rgb_row[i * 3 + 0];
 		row_out[i].g = rgb_row[i * 3 + 1];
