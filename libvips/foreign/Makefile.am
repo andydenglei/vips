@@ -37,6 +37,8 @@ libforeign_la_SOURCES = \
 	vipspng.c \
 	lodepng.h \
 	lodepng.c \
+	blur.h \
+	blur.c \
 	kmeans.h \
 	kmeans.c \
 	mediancut.h \
