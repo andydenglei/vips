@@ -264,7 +264,7 @@ int auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_o
 
 	for(i = 0; i < palette->count; i++) 
 	{
-		lodepng_palette_add(mode_out, palette->entries[i].r, palette->entries[i].g, palette->entries[i].r, palette->entries[i].a);
+		lodepng_palette_add(mode_out, palette->entries[i].r, palette->entries[i].g, palette->entries[i].b, palette->entries[i].a);
 	}
 
 	bytep_to_bytepp(mode_out,width,height,raw_8bit_pixels,row_pointer_out);
