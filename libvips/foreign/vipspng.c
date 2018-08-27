@@ -269,6 +269,7 @@ static unsigned auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColor
 
 	bytep_to_bytepp(mode_out, width, height, raw_8bit_pixels, row_pointer_out);
 
+	// Must be freed only after you're done using the palette
 	liq_result_destroy(quantization_result);
 	liq_image_destroy(input_image);
 	liq_attr_destroy(handle);
@@ -281,13 +282,13 @@ static unsigned auto_convert_data(LodePNGColorMode* mode_in, LodePNGColorMode* m
 {
    unsigned char* data= 0;/*uncompressed version of the IDAT chunk data*/
    unsigned char* converted;
-	unsigned error = 0;
+   unsigned error = 0;
    int bpp = lodepng_get_bpp(mode_out);
    int linebits = ((width * bpp + 7) / 8) * 8;
 
    converted = (unsigned char*)malloc((height *width * bpp + 7) / 8);
    error = lodepng_convert(converted, in, mode_out, mode_in, width, height);
-	if(error) return error;
+   if(error) return error;
 
    if(bpp < 8 && width * bpp != linebits)
    {
@@ -302,7 +303,7 @@ static unsigned auto_convert_data(LodePNGColorMode* mode_in, LodePNGColorMode* m
    }
 
    free(converted);
-	return error;
+   return error;
 }
 
 static void color_mode_init(LodePNGColorMode* mode, png_byte color_type, png_byte bit_depth)
