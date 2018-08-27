@@ -269,6 +269,11 @@ static unsigned auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColor
 
 	bytep_to_bytepp(mode_out, width, height, raw_8bit_pixels, row_pointer_out);
 
+	liq_result_destroy(quantization_result);
+   liq_image_destroy(input_image);
+   liq_attr_destroy(handle);
+	free(raw_8bit_pixels);
+	
 	return liq_error;
 }
 
