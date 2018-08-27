@@ -218,7 +218,7 @@ static void free_png_bytepp(int height, png_bytepp row_pointer)
 	}
 }
 
-void rgb_to_rgba_callback(liq_color row_out[], int row_index, int width, void *user_info) 
+static void rgb_to_rgba_callback(liq_color row_out[], int row_index, int width, void *user_info) 
 {
 	int i;
 	unsigned char *rgb_row = ((unsigned char *)user_info) + 3 * width * row_index;
@@ -232,9 +232,10 @@ void rgb_to_rgba_callback(liq_color row_out[], int row_index, int width, void *u
 	}
 }
 
-int auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
+static unsigned auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
 {
 	int i;
+	unsigned liq_error = LIQ_OK;
 	liq_result *quantization_result;
 	unsigned char *raw_8bit_pixels;
 	const liq_palette *palette;
@@ -251,15 +252,14 @@ int auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_o
 	}
 
 	// You could set more options here, like liq_set_quality
-	if (liq_image_quantize(input_image, handle, &quantization_result) != LIQ_OK) 
-	{
-		fprintf(stderr, "Quantization failed\n");
-		return 1;
-	}
+	liq_error = liq_image_quantize(input_image, handle, &quantization_result);
+	if(liq_error) return liq_error;
 	
 	raw_8bit_pixels = (unsigned char *)malloc(pixels_size);
-	liq_set_dithering_level(quantization_result, 1.0);
-	liq_write_remapped_image(quantization_result, input_image, raw_8bit_pixels, pixels_size);
+	liq_error = liq_set_dithering_level(quantization_result, 1.0);
+	if(liq_error) return liq_error;
+	liq_error = liq_write_remapped_image(quantization_result, input_image, raw_8bit_pixels, pixels_size);
+	if(liq_error) return liq_error;
 	palette = liq_get_palette(quantization_result);
 
 	for(i = 0; i < palette->count; i++) 
@@ -267,20 +267,22 @@ int auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_o
 		lodepng_palette_add(mode_out, palette->entries[i].r, palette->entries[i].g, palette->entries[i].b, palette->entries[i].a);
 	}
 
-	bytep_to_bytepp(mode_out,width,height,raw_8bit_pixels,row_pointer_out);
+	bytep_to_bytepp(mode_out, width, height, raw_8bit_pixels, row_pointer_out);
 
-	return 0;
+	return liq_error;
 }
 
-static void auto_convert_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
+static unsigned auto_convert_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
 {
    unsigned char* data= 0;/*uncompressed version of the IDAT chunk data*/
    unsigned char* converted;
+	unsigned error = 0;
    int bpp = lodepng_get_bpp(mode_out);
    int linebits = ((width * bpp + 7) / 8) * 8;
 
    converted = (unsigned char*)malloc((height *width * bpp + 7) / 8);
-   lodepng_convert(converted, in, mode_out, mode_in, width, height);
+   error = lodepng_convert(converted, in, mode_out, mode_in, width, height);
+	if(error) return error;
 
    if(bpp < 8 && width * bpp != linebits)
    {
@@ -295,6 +297,7 @@ static void auto_convert_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_
    }
 
    free(converted);
+	return error;
 }
 
 static void color_mode_init(LodePNGColorMode* mode, png_byte color_type, png_byte bit_depth)
@@ -1161,6 +1164,7 @@ write_vips( Write *write,
 	{
 		is_rgb_or_rgba = TRUE;
 		
+		unsigned error = 0;
 		mode_in = (LodePNGColorMode*)malloc(sizeof(LodePNGColorMode));
 		lodepng_color_mode_init(mode_in);
 		mode_out = (LodePNGColorMode*)malloc(sizeof(LodePNGColorMode));
@@ -1180,22 +1184,25 @@ write_vips( Write *write,
 		image = malloc_png_bytep(mode_in, in->Xsize, in->Ysize);
 		bytepp_to_bytep(mode_in, in->Xsize, in->Ysize, image, row_pointer_in);
 		free(row_pointer_in);
-		lodepng_auto_choose_color(mode_out, (unsigned char*)image, in->Xsize, in->Ysize, mode_in);
-		
+		error = lodepng_auto_choose_color(mode_out, (unsigned char*)image, in->Xsize, in->Ysize, mode_in);
+		if(error) return error;
+			
 		if((mode_out->colortype == LCT_RGB || mode_out->colortype == LCT_RGBA) && mode_out->bitdepth == 8)
 		{
 			printf("mode_out is rgb or rgba\n");
 			lodepng_color_mode_cleanup(mode_out);
 			color_mode_init(mode_out, LCT_PALETTE, 8);
 			row_pointer_out = malloc_png_bytepp(mode_out, in->Xsize, in->Ysize);
-			auto_convert_platte_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
+			error = auto_convert_platte_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
 		}
 		else
 		{
 			row_pointer_out = malloc_png_bytepp(mode_out, in->Xsize, in->Ysize);
-			auto_convert_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
+			error = auto_convert_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
 		}
-		auto_converted = TRUE;
+		
+		if(!error)
+			auto_converted = TRUE;
 		
 		//free mode_in and image
 		lodepng_color_mode_cleanup(mode_in);
