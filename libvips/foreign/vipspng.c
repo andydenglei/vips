@@ -232,7 +232,7 @@ static void rgb_to_rgba_callback(liq_color row_out[], int row_index, int width, 
 	}
 }
 
-static unsigned auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
+static unsigned auto_convert_palette_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
 {
 	int i;
 	unsigned liq_error = LIQ_OK;
@@ -1199,7 +1199,7 @@ write_vips( Write *write,
 			lodepng_color_mode_cleanup(mode_out);
 			color_mode_init(mode_out, LCT_PALETTE, 8);
 			row_pointer_out = malloc_png_bytepp(mode_out, in->Xsize, in->Ysize);
-			error = auto_convert_platte_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
+			error = auto_convert_palette_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
 		}
 		else
 		{
