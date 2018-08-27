@@ -220,16 +220,16 @@ static void free_png_bytepp(int height, png_bytepp row_pointer)
 
 void rgb_to_rgba_callback(liq_color row_out[], int row_index, int width, void *user_info) 
 {
-	int i;
+   int i;
    unsigned char *rgb_row = ((unsigned char *)user_info) + 3 * width * row_index;
 
    for(i = 0; i < width; i++) 
 	{
-        row_out[i].r = rgb_row[i * 3 + 0];
-        row_out[i].g = rgb_row[i * 3 + 1];
-        row_out[i].b = rgb_row[i * 3 + 2];
-        row_out[i].a = 255;
-   }
+		row_out[i].r = rgb_row[i * 3 + 0];
+		row_out[i].g = rgb_row[i * 3 + 1];
+		row_out[i].b = rgb_row[i * 3 + 2];
+		row_out[i].a = 255;
+	}
 }
 
 int auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
@@ -250,11 +250,11 @@ int auto_convert_platte_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_o
 		input_image = liq_image_create_rgba(handle, in, width, height, 0);
 	}
 
-   // You could set more options here, like liq_set_quality
+	// You could set more options here, like liq_set_quality
 	if (liq_image_quantize(input_image, handle, &quantization_result) != LIQ_OK) 
 	{
-        fprintf(stderr, "Quantization failed\n");
-        return 1;
+		fprintf(stderr, "Quantization failed\n");
+		return 1;
 	}
 	
 	raw_8bit_pixels = (unsigned char *)malloc(pixels_size);
