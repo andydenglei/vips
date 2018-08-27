@@ -117,10 +117,167 @@
 #include "pforeign.h"
 
 #include <png.h>
+#include "lodepng.h"
 
 #if PNG_LIBPNG_VER < 10003
 #error "PNG library too old."
 #endif
+
+static void bytep_to_bytepp(const LodePNGColorMode* color, int width, int height, png_bytep in, png_bytepp row_pointer_out)
+{
+	int i,j;
+	int span;
+	int pos=0;
+	int bpp= lodepng_get_bpp(color);
+
+	for(i = 0; i< height; i++)
+	{
+		for(j = 0; j < width; j++)
+		{
+			if(bpp == 32)
+			{
+				row_pointer_out[i][4 * j + 0] = in[pos++];
+				row_pointer_out[i][4 * j + 1] = in[pos++];
+				row_pointer_out[i][4 * j + 2] = in[pos++];
+				row_pointer_out[i][4 * j + 3] = in[pos++];
+			}
+			else if(bpp == 24)
+			{
+				row_pointer_out[i][3 * j + 0] = in[pos++];
+				row_pointer_out[i][3 * j + 1] = in[pos++];
+				row_pointer_out[i][3 * j + 2] = in[pos++];
+			}
+			else if(bpp == 8)
+			{
+				row_pointer_out[i][j] = in[pos++];
+			}
+			else if(bpp < 8)
+			{
+				span = 8/bpp;
+				if(j%span == 0)
+				{
+					row_pointer_out[i][j / span] = in[pos++];
+				}
+			}
+		}
+	}
+}
+
+static void bytepp_to_bytep(const LodePNGColorMode* color, int width, int height, png_bytep out, png_bytepp row_pointer_in)
+{
+	int i, j;
+	int pos = 0;
+	int size;
+	
+	int channel = color->colortype == LCT_RGBA ? 4 : 3;
+	size = width * channel;
+	
+	for(i = 0; i < height; i++)
+	{
+		for(j = 0; j < size; j++)
+		{
+			out[pos++] = row_pointer_in[i][j];
+		}
+	}
+}
+
+static png_bytep malloc_png_bytep(LodePNGColorMode* mode, int width, int height)
+{
+	png_bytep bytep;
+	int channel = mode->colortype == LCT_RGBA ? 4 :3; 
+	
+	bytep = (png_bytep)malloc(sizeof(png_byte) * width * height * channel);
+	return bytep;
+}
+
+static png_bytepp malloc_png_bytepp(LodePNGColorMode* mode, int width, int height)
+{
+	int i;
+	png_bytepp bytepp;
+	int bpp = lodepng_get_bpp(mode);
+	bytepp =(png_bytepp) malloc(sizeof(png_bytep) * height);
+	for (i = 0; i < height; i++)
+	{
+		bytepp[i] = (png_bytep)malloc(sizeof(png_byte) * (width * bpp + 7)/8);
+	}
+	return bytepp;
+}
+
+static void free_png_bytepp(int height, png_bytepp row_pointer)
+{
+	int i;
+	if(row_pointer)
+	{
+		for(i = 0 ; i < height; i++)
+		{
+			if(row_pointer[i])
+				free(row_pointer[i]);
+		}
+		free(row_pointer);
+	}
+}
+
+static void auto_convert_data(LodePNGColorMode* mode_in, LodePNGColorMode* mode_out, int width, int height, png_bytep in, png_bytep* row_pointer_out)
+{
+   unsigned char* data= 0;/*uncompressed version of the IDAT chunk data*/
+   unsigned char* converted;
+   int bpp = lodepng_get_bpp(mode_out);
+   int linebits = ((width * bpp + 7) / 8) * 8;
+
+   converted = (unsigned char*)malloc((height *width * bpp + 7) / 8);
+   lodepng_convert(converted, in, mode_out, mode_in, width, height);
+
+   if(bpp < 8 && width * bpp != linebits)
+   {
+	   data  = (unsigned char*)malloc(height * ((width * bpp + 7) / 8));
+	   lodepng_add_padding_bits(data, converted, linebits, width * bpp, height);
+	   bytep_to_bytepp(mode_out, width, height, (png_bytep)data, row_pointer_out);
+	   free(data);
+   }
+   else
+   {
+	   bytep_to_bytepp(mode_out, width, height, (png_bytep)converted, row_pointer_out);
+   }
+
+   free(converted);
+}
+
+static void color_mode_init(LodePNGColorMode* mode, png_byte color_type, png_byte bit_depth)
+{
+	mode->bitdepth = bit_depth;
+	switch(color_type)
+	{
+	case PNG_COLOR_TYPE_GRAY:
+		mode->colortype = LCT_GREY;
+		break;
+	case PNG_COLOR_TYPE_RGB:
+		mode->colortype = LCT_RGB;
+		break;
+	case PNG_COLOR_TYPE_PALETTE:
+		mode->colortype = LCT_PALETTE;
+		break;
+	case PNG_COLOR_TYPE_GRAY_ALPHA:
+		mode->colortype = LCT_GREY_ALPHA;
+		break;
+	case PNG_COLOR_TYPE_RGBA:
+		mode->colortype = LCT_RGBA;
+		break;
+	}
+}
+
+static void SetPLTE(png_structp png_ptr, png_infop info_ptr, LodePNGColorMode* mode)
+{
+	int i;
+	png_colorp palette=(png_colorp)malloc(sizeof(png_color)* mode->palettesize);
+	for(i = 0; i < mode->palettesize; i++)
+	{
+		palette[i].red = mode->palette[4 * i + 0];
+		palette[i].green = mode->palette[4 * i + 1];
+		palette[i].blue = mode->palette[4 * i + 2];
+	}
+	png_set_PLTE(png_ptr, info_ptr, palette, mode->palettesize);
+	free(palette);
+}
 
 static void
 user_error_function( png_structp png_ptr, png_const_charp error_msg )
@@ -885,7 +1042,16 @@ write_vips( Write *write,
 	int bit_depth;
 	int color_type;
 	int interlace_type;
-	int i, nb_passes;
+	int i, j, nb_passes;
+	
+	png_byte* image = NULL;
+	png_bytep* row_pointer_in = NULL;
+	png_bytep* row_pointer_out = NULL;
+	gboolean is_rgb_or_rgba = FALSE;
+	gboolean auto_converted = FALSE;
+	VipsRegion *region = NULL;
+	LodePNGColorMode* mode_out;
+	LodePNGColorMode* mode_in;
 
         g_assert( in->BandFmt == VIPS_FORMAT_UCHAR || 
 		in->BandFmt == VIPS_FORMAT_USHORT );
@@ -920,10 +1086,6 @@ write_vips( Write *write,
 	 */
 	png_set_compression_level( write->pPng, compress );
 
-	/* Set row filter.
-	 */
-	png_set_filter( write->pPng, 0, filter );
-
 	bit_depth = in->BandFmt == VIPS_FORMAT_UCHAR ? 8 : 16;
 
 	switch( in->Bands ) {
@@ -939,11 +1101,61 @@ write_vips( Write *write,
 	}
 
 	interlace_type = interlace ? PNG_INTERLACE_ADAM7 : PNG_INTERLACE_NONE;
-
-	png_set_IHDR( write->pPng, write->pInfo, 
-		in->Xsize, in->Ysize, bit_depth, color_type, interlace_type, 
-		PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT );
-
+	
+	if((color_type == PNG_COLOR_TYPE_RGB || color_type == PNG_COLOR_TYPE_RGB_ALPHA) && bit_depth == 8)
+	{
+		is_rgb_or_rgba = TRUE;
+		
+		mode_in = (LodePNGColorMode*)malloc(sizeof(LodePNGColorMode));
+		lodepng_color_mode_init(mode_in);
+		mode_out = (LodePNGColorMode*)malloc(sizeof(LodePNGColorMode));
+		lodepng_color_mode_init(mode_out);
+		color_mode_init(mode_in, color_type, bit_depth);
+		lodepng_color_mode_copy(mode_out, mode_in);
+		
+		//get row_pointer from source image
+		row_pointer_in = (png_bytepp)malloc(sizeof(png_bytep) * (in->Ysize));
+		region = vips_region_new(in);
+		VipsRect r = {0, 0, in->Xsize, in->Ysize};
+		if( vips_region_prepare(region, &r))
+			return (-1);
+		for(i = 0; i < in->Ysize; i++)
+			row_pointer_in[i] = (png_bytep)VIPS_REGION_ADDR(region, 0, i );
+		
+		image = malloc_png_bytep(mode_in, in->Xsize, in->Ysize);
+		bytepp_to_bytep(mode_in, in->Xsize, in->Ysize, image, row_pointer_in);
+		free(row_pointer_in);
+		lodepng_auto_choose_color(mode_out, (unsigned char*)image, in->Xsize, in->Ysize, mode_in);
+		
+		if(!lodepng_color_model_equal(mode_out, mode_in))
+		{
+			row_pointer_out = malloc_png_bytepp(mode_out, in->Xsize, in->Ysize);
+			auto_convert_data(mode_in, mode_out, in->Xsize, in->Ysize, image, row_pointer_out);
+			auto_converted = TRUE;
+		}
+		
+		//free mode_in and image
+		lodepng_color_mode_cleanup(mode_in);
+		free(mode_in);
+		free(image);
+	}
+	
+	if(auto_converted)
+	{
+		// Ignore interlace_type, alway wirte PNG files with PNG_INTERLACE_NONE if it can convert,
+		// as PNG size is smaller with PNG_INTERLACE_NONE.
+		png_set_IHDR( write->pPng, write->pInfo, 
+			in->Xsize, in->Ysize, mode_out->bitdepth, mode_out->colortype, PNG_INTERLACE_NONE, 
+			PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT );
+	}
+	else
+	{
+		png_set_filter( write->pPng, 0, filter );
+		png_set_IHDR( write->pPng, write->pInfo, 
+			in->Xsize, in->Ysize, bit_depth, color_type, interlace_type, 
+			PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT );
+	}
+	
 	/* Set resolution. libpng uses pixels per meter.
 	 */
 	png_set_pHYs( write->pPng, write->pInfo, 
@@ -990,25 +1202,39 @@ write_vips( Write *write,
 			PNG_COMPRESSION_TYPE_BASE, data, length );
 	}
 
+	if( auto_converted && mode_out->colortype == LCT_PALETTE)
+		SetPLTE( write->pPng, write->pInfo, mode_out);
+	
 	png_write_info( write->pPng, write->pInfo ); 
-
-	/* If we're an intel byte order CPU and this is a 16bit image, we need
-	 * to swap bytes.
-	 */
-	if( bit_depth > 8 && !vips_amiMSBfirst() ) 
-		png_set_swap( write->pPng ); 
-
-	if( interlace )	
-		nb_passes = png_set_interlace_handling( write->pPng );
+	
+	if( auto_converted )
+	{
+		/* Write data.
+		*/
+		png_write_rows(write->pPng, row_pointer_out, in->Ysize);
+		free_png_bytepp(in->Ysize, row_pointer_out);
+	}
 	else
-		nb_passes = 1;
+	{
+		/* If we're an intel byte order CPU and this is a 16bit image, we need
+		* to swap bytes.
+		*/
+		if( bit_depth > 8 && !vips_amiMSBfirst() ) 
+			png_set_swap( write->pPng ); 
 
-	/* Write data.
-	 */
-	for( i = 0; i < nb_passes; i++ ) 
-		if( vips_sink_disc( in, write_png_block, write ) )
-			return( -1 );
-
+		if( interlace )	
+			nb_passes = png_set_interlace_handling( write->pPng );
+		else
+			nb_passes = 1;
+		
+		/* Write data.
+		*/
+		for( i = 0; i < nb_passes; i++ ) 
+		{
+			if( vips_sink_disc( in, write_png_block, write ) )
+				return( -1 );
+		}
+	}
 	/* The setjmp() was held by our background writer: reset it.
 	 */
 	if( setjmp( png_jmpbuf( write->pPng ) ) ) 
@@ -1016,6 +1242,12 @@ write_vips( Write *write,
 
 	png_write_end( write->pPng, write->pInfo );
 
+	if(is_rgb_or_rgba)
+	{
+		lodepng_color_mode_cleanup(mode_out);
+		free(mode_out);
+	}
+	
 	return( 0 );
 }
 

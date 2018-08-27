@@ -35,6 +35,8 @@ libforeign_la_SOURCES = \
 	pngload.c \
 	pngsave.c \
 	vipspng.c \
+	lodepng.h \
+	lodepng.c \
 	openexr2vips.c \
 	openexrload.c \
 	fits.c \
